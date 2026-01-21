@@ -174,7 +174,7 @@ func (form *RecordTelegramLogin) GetAuthUserFromData() (*auth.AuthUser, error) {
 		authUser.Id = strconv.FormatInt(telegramData.Id, 10)
 		authUser.Username = telegramData.Username
 		authUser.Name = strings.TrimSpace(telegramData.FirstName + " " + telegramData.LastName)
-		authUser.AvatarUrl = telegramData.PhotoUrl
+		authUser.AvatarURL = telegramData.PhotoUrl
 
 		// Fill CreateData
 		form.CreateData["name"] = authUser.Name
@@ -203,7 +203,7 @@ func (form *RecordTelegramLogin) GetAuthUserFromData() (*auth.AuthUser, error) {
 		case "language_code":
 			form.CreateData["language_code"] = v[0]
 		case "photo_url":
-			authUser.AvatarUrl = v[0]
+			authUser.AvatarURL = v[0]
 		}
 	}
 	authUser.Name = strings.TrimSpace(firstName + " " + lastName)
@@ -257,7 +257,7 @@ func (form *RecordTelegramLogin) SubmitWithTelegramData(
 	authUser.Id = strconv.FormatInt(tgData.Id, 10)
 	authUser.Username = tgData.Username
 	authUser.Name = strings.TrimSpace(tgData.FirstName + " " + tgData.LastName)
-	authUser.AvatarUrl = tgData.PhotoUrl
+	authUser.AvatarURL = tgData.PhotoUrl
 
 	form.app.Logger().Info("SubmitWithTelegramData: authUser", slog.Any("authUser", authUser))
 
