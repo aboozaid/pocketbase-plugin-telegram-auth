@@ -10,7 +10,7 @@ import (
 	pbForms "github.com/pocketbase/pocketbase/forms"
 	"github.com/pocketbase/pocketbase/tools/auth"
 	"github.com/pocketbase/pocketbase/tools/search"
-	"github.com/rinekri/pocketbase-plugin-telegram-auth/forms"
+	"github.com/aboozaid/pocketbase-plugin-telegram-auth/forms"
 )
 
 // Options defines optional struct to customize the default plugin behavior.
