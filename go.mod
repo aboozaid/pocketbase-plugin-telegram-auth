@@ -1,4 +1,4 @@
-module github.com/rinekri/pocketbase-plugin-telegram-auth
+module github.com/aboozaid/pocketbase-plugin-telegram-auth
 
 go 1.23.0
 
