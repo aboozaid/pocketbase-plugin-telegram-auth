@@ -43,3 +43,5 @@ require (
 	modernc.org/memory v1.11.0 // indirect
 	modernc.org/sqlite v1.37.1 // indirect
 )
+
+replace github.com/rinekri/pocketbase-plugin-telegram-auth => github.com/aboozaid/pocketbase-plugin-telegram-auth@latest
