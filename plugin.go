@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/iamelevich/pocketbase-plugin-telegram-auth/forms"
+	"github.com/aboozaid/pocketbase-plugin-telegram-auth/forms"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/auth"

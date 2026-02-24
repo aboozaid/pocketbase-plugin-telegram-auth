@@ -4,7 +4,7 @@ import (
 	"log"
 	"os"
 
-	tgAuthPlugin "github.com/iamelevich/pocketbase-plugin-telegram-auth"
+	tgAuthPlugin "github.com/aboozaid/pocketbase-plugin-telegram-auth"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 

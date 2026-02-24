@@ -5,9 +5,9 @@ import (
 	"reflect"
 	"testing"
 
+	pocketbase_plugin_telegram_auth "github.com/aboozaid/pocketbase-plugin-telegram-auth"
+	"github.com/aboozaid/pocketbase-plugin-telegram-auth/forms"
 	validation "github.com/go-ozzo/ozzo-validation/v4"
-	pocketbase_plugin_telegram_auth "github.com/iamelevich/pocketbase-plugin-telegram-auth"
-	"github.com/iamelevich/pocketbase-plugin-telegram-auth/forms"
 	"github.com/pocketbase/pocketbase/tests"
 	"github.com/pocketbase/pocketbase/tools/auth"
 )

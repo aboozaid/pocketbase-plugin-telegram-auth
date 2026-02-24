@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/url"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -152,8 +153,11 @@ func (form *RecordTelegramLogin) GetAuthUserFromData() (*auth.AuthUser, error) {
 		authUser.RawUser[k] = v[0]
 	}
 
-	// Set CreateData
-	form.CreateData = map[string]any{}
+	// avoid override custom data
+	if form.CreateData == nil {
+		// Set CreateData
+		form.CreateData = map[string]any{}
+	}
 
 	// If we have user param - this is data from WebApp https://core.telegram.org/bots/webapps#webappinitdata
 	if v, ok := params["user"]; ok {
@@ -173,6 +177,7 @@ func (form *RecordTelegramLogin) GetAuthUserFromData() (*auth.AuthUser, error) {
 		form.CreateData["telegram_username"] = authUser.Username
 		form.CreateData["telegram_id"] = authUser.Id
 		form.CreateData["language_code"] = telegramData.LanguageCode
+		form.CreateData["photo_url"] = telegramData.PhotoUrl
 
 		return &authUser, nil
 	}
@@ -194,6 +199,7 @@ func (form *RecordTelegramLogin) GetAuthUserFromData() (*auth.AuthUser, error) {
 			form.CreateData["language_code"] = v[0]
 		case "photo_url":
 			authUser.AvatarUrl = v[0]
+			form.CreateData["photo_url"] = v[0]
 		}
 	}
 	authUser.Name = strings.TrimSpace(firstName + " " + lastName)
@@ -307,7 +313,14 @@ func (form *RecordTelegramLogin) submitWithAuthUser(
 
 			// load custom data
 			createForm.Load(form.CreateData)
-
+			fields := []string{"passwordConfirm", "username"}
+			fields = append(fields, form.collection.Fields.FieldNames()...)
+			for field, value := range form.CreateData {
+				if !slices.Contains(fields, field) {
+					// set custom data on record so we can get them using hooks
+					authRecord.Set(field, value)
+				}
+			}
 			for _, f := range beforeCreateFuncs {
 				if f == nil {
 					continue
