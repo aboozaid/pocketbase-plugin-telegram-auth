@@ -9,6 +9,7 @@ import (
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/auth"
+	"github.com/pocketbase/pocketbase/tools/router"
 	"golang.org/x/oauth2"
 )
 
@@ -158,6 +159,9 @@ func Register(app core.App, options *Options) (*Plugin, error) {
 
 			record, _, submitErr := form.Submit(&p.OnRecordAuthWithTelegramCreated)
 			if submitErr != nil {
+				if errors.Is(submitErr, &router.ApiError{}) {
+					return submitErr
+				}
 				// log.Default().Println("Error submitting form", "err", submitErr)
 				return e.BadRequestError("Failed to authenticate.", submitErr)
 			}
