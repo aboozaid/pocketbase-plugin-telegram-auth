@@ -159,7 +159,8 @@ func Register(app core.App, options *Options) (*Plugin, error) {
 
 			record, _, submitErr := form.Submit(&p.OnRecordAuthWithTelegramCreated)
 			if submitErr != nil {
-				if errors.Is(submitErr, &router.ApiError{}) {
+				var apiErr *router.ApiError
+				if errors.As(submitErr, &apiErr) {
 					return submitErr
 				}
 				// log.Default().Println("Error submitting form", "err", submitErr)
