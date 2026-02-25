@@ -225,7 +225,7 @@ func TestSubmit_WithValidData(t *testing.T) {
 	form := forms.NewRecordTelegramLogin(app, "test", authCollection, nil)
 	form.Data = "query_id=AAGSTRQLAAAAAJJNFAsbizs2&user=%7B%22id%22%3A185879954%2C%22first_name%22%3A%22Ilya%22%2C%22last_name%22%3A%22%22%2C%22username%22%3A%22beer13%22%2C%22language_code%22%3A%22ru%22%7D&auth_date=1673317539&hash=74e1b67c230d2343f5d317a4d77841e9c673cae1bde28606a40825a98c7be638"
 
-	record, authUser, err := form.Submit()
+	record, authUser, err := form.Submit(nil)
 	if err != nil {
 		t.Fatalf("Submit failed: %v", err)
 	}
@@ -268,7 +268,7 @@ func TestSubmitWithTelegramData_WithValidData(t *testing.T) {
 	}
 
 	form := forms.NewRecordTelegramLogin(app, "test_bot_token", authCollection, nil)
-	record, authUser, err := form.SubmitWithTelegramData(tgData)
+	record, authUser, err := form.SubmitWithTelegramData(tgData, nil)
 	if err != nil {
 		t.Fatalf("SubmitWithTelegramData failed: %v", err)
 	}
@@ -298,7 +298,7 @@ func TestSubmit_WithInvalidData(t *testing.T) {
 	form := forms.NewRecordTelegramLogin(app, "test", authCollection, nil)
 	form.Data = "invalid=data&hash=wrong"
 
-	_, _, err := form.Submit()
+	_, _, err := form.Submit(nil)
 	if err == nil {
 		t.Error("Expected error for invalid data")
 	}

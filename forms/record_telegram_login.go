@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/url"
 	"regexp"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -21,6 +20,33 @@ import (
 	"github.com/pocketbase/pocketbase/tools/auth"
 	"github.com/pocketbase/pocketbase/tools/security"
 )
+
+type HookFunc[T any] func(e T) error
+
+type Hook[T any] struct {
+    handlers []HookFunc[T]
+}
+
+func (h *Hook[T]) BindFunc(fn HookFunc[T]) {
+    h.handlers = append(h.handlers, fn)
+}
+
+func (h *Hook[T]) trigger(event T) error {
+    for _, fn := range h.handlers {
+        if err := fn(event); err != nil {
+            return err
+        }
+    }
+    return nil
+}
+
+type RecordAuthWithTelegramCreatedEvent struct {
+	App	core.App
+	AuthRecord	*core.Record
+	CreateData	map[string]any
+}
+
+// type OnCreateAuthRequest = func(app core.App, authRecord *core.Record) error
 
 // RecordTelegramLogin is an auth record Telegram login form.
 type RecordTelegramLogin struct {
@@ -222,7 +248,7 @@ func (form *RecordTelegramLogin) GetAuthUserFromData() (*auth.AuthUser, error) {
 //
 // On success returns the authorized record model and the fetched provider's data.
 func (form *RecordTelegramLogin) Submit(
-	beforeCreateFuncs ...func(createForm *pbForms.RecordUpsert, authRecord *core.Record, authUser *auth.AuthUser) error,
+	event *Hook[*RecordAuthWithTelegramCreatedEvent],
 ) (*core.Record, *auth.AuthUser, error) {
 	if err := form.Validate(); err != nil {
 		// log.Default().Println("Error validating form", "err", err)
@@ -233,12 +259,12 @@ func (form *RecordTelegramLogin) Submit(
 		// log.Default().Println("Error getting auth user from data", "err", err)
 		return nil, nil, err
 	} else {
-		return form.submitWithAuthUser(authUser, beforeCreateFuncs...)
+		return form.submitWithAuthUser(authUser, event)
 	}
 }
 
 func (form *RecordTelegramLogin) SubmitWithTelegramData(
-	tgData *TelegramData, beforeCreateFuncs ...func(createForm *pbForms.RecordUpsert, authRecord *core.Record, authUser *auth.AuthUser) error,
+	tgData *TelegramData, event *Hook[*RecordAuthWithTelegramCreatedEvent],
 ) (*core.Record, *auth.AuthUser, error) {
 	authUser := auth.AuthUser{}
 
@@ -266,11 +292,11 @@ func (form *RecordTelegramLogin) SubmitWithTelegramData(
 		"language_code":     tgData.LanguageCode,
 	}
 
-	return form.submitWithAuthUser(&authUser, beforeCreateFuncs...)
+	return form.submitWithAuthUser(&authUser, event)
 }
 
 func (form *RecordTelegramLogin) submitWithAuthUser(
-	authUser *auth.AuthUser, beforeCreateFuncs ...func(createForm *pbForms.RecordUpsert, authRecord *core.Record, authUser *auth.AuthUser) error,
+	authUser *auth.AuthUser, event *Hook[*RecordAuthWithTelegramCreatedEvent],
 ) (*core.Record, *auth.AuthUser, error) {
 	var authRecord *core.Record
 	var err error
@@ -313,29 +339,36 @@ func (form *RecordTelegramLogin) submitWithAuthUser(
 
 			// load custom data
 			createForm.Load(form.CreateData)
-			fields := []string{"passwordConfirm", "username"}
-			fields = append(fields, form.collection.Fields.FieldNames()...)
-			for field, value := range form.CreateData {
-				if !slices.Contains(fields, field) {
-					// set custom data on record so we can get them using hooks
-					authRecord.Set(field, value)
-				}
-			}
-			for _, f := range beforeCreateFuncs {
-				if f == nil {
-					continue
-				}
-				if err := f(createForm, authRecord, authUser); err != nil {
-					// log.Default().Println("Error running before create function", "err", err)
-					return err
-				}
-			}
-
+			
+			// for _, f := range beforeCreateFuncs {
+			// 	if f == nil {
+			// 		continue
+			// 	}
+			// 	if err := f(createForm, authRecord, authUser); err != nil {
+			// 		// log.Default().Println("Error running before create function", "err", err)
+			// 		return err
+			// 	}
+			// }
+			
 			// create the new auth record
 			if err := createForm.Submit(); err != nil {
 				// log.Default().Println("Error creating auth record", "err", err)
 				return err
 			}
+			payload := &RecordAuthWithTelegramCreatedEvent{txApp, authRecord, form.CreateData}
+			if err := event.trigger(payload); err != nil {
+				return err
+			}
+
+			// for _, f := range onCreateAuthRequest {
+			// 	if f == nil {
+			// 		continue
+			// 	}
+			// 	if err := f(txApp, authRecord); err != nil {
+			// 		// log.Default().Println("Error running before create function", "err", err)
+			// 		return err
+			// 	}
+			// }
 		}
 
 		// create ExternalAuth relation if missing

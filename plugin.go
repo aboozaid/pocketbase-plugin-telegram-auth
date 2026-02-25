@@ -37,6 +37,9 @@ type Plugin struct {
 	app        core.App
 	options    *Options
 	collection *core.Collection
+
+	// Triggered after creating user record and before terminating transaction
+	OnRecordAuthWithTelegramCreated	forms.Hook[*forms.RecordAuthWithTelegramCreatedEvent]
 }
 
 // Validate plugin options. Return error if some option is invalid.
@@ -92,7 +95,7 @@ func (p *Plugin) AuthByTelegramData(tgData forms.TelegramData) (*core.Record, *a
 		return nil, nil, err
 	}
 
-	return form.SubmitWithTelegramData(&tgData)
+	return form.SubmitWithTelegramData(&tgData, &p.OnRecordAuthWithTelegramCreated)
 }
 
 // MustRegister is a helper function to register plugin and panic if error occurred.
@@ -153,7 +156,7 @@ func Register(app core.App, options *Options) (*Plugin, error) {
 				return e.BadRequestError("Failed to read request data", err)
 			}
 
-			record, _, submitErr := form.Submit()
+			record, _, submitErr := form.Submit(&p.OnRecordAuthWithTelegramCreated)
 			if submitErr != nil {
 				// log.Default().Println("Error submitting form", "err", submitErr)
 				return e.BadRequestError("Failed to authenticate.", submitErr)
