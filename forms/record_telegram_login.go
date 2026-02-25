@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/url"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -339,7 +340,14 @@ func (form *RecordTelegramLogin) submitWithAuthUser(
 
 			// load custom data
 			createForm.Load(form.CreateData)
-			
+			fields := []string{"passwordConfirm", "username"}
+			fields = append(fields, form.collection.Fields.FieldNames()...)
+			for field, value := range form.CreateData {
+				if !slices.Contains(fields, field) {
+					// set custom data on record so we can get them using hooks
+					authRecord.Set(field, value)
+				}
+			}
 			// for _, f := range beforeCreateFuncs {
 			// 	if f == nil {
 			// 		continue
