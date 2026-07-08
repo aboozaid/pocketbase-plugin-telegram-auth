@@ -3,7 +3,7 @@ package forms_test
 import (
 	"testing"
 
-	"github.com/iamelevich/pocketbase-plugin-telegram-auth/forms"
+	"github.com/aboozaid/pocketbase-plugin-telegram-auth/forms"
 	"github.com/pocketbase/pocketbase/tests"
 )
 

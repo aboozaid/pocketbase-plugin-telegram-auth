@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 
 	"github.com/aboozaid/pocketbase-plugin-telegram-auth/forms"
 	"github.com/pocketbase/pocketbase/apis"
@@ -182,7 +183,7 @@ func Register(app core.App, options *Options) (*Plugin, error) {
 				// log.Default().Println("Error binding body", "err", err)
 				return e.BadRequestError("Failed to read request data", err)
 			}
-
+			
 			record, _, submitErr := form.Submit(&p.OnRecordAuthWithTelegramCreated)
 			if submitErr != nil {
 				var apiErr *router.ApiError
@@ -191,6 +192,9 @@ func Register(app core.App, options *Options) (*Plugin, error) {
 				}
 				// log.Default().Println("Error submitting form", "err", submitErr)
 				return e.BadRequestError("Failed to authenticate.", submitErr)
+			}
+			if record.GetBool("skipToken") {
+				return e.JSON(http.StatusCreated, record)
 			}
 
 			meta := map[string]any{"isNew": record.IsNew()}

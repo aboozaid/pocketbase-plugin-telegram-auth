@@ -267,12 +267,6 @@ func (form *RecordTelegramLogin) GetAuthUserFromData() (*auth.AuthUser, error) {
 		}
 	}
 
-	// avoid override custom data
-	if form.CreateData == nil {
-		// Set CreateData
-		form.CreateData = map[string]any{}
-	}
-
 	// If we have user param - this is data from WebApp https://core.telegram.org/bots/webapps#webappinitdata
 	if userVal != "" {
 		telegramData := TelegramData{}
