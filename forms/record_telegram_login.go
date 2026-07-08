@@ -1,16 +1,14 @@
 package forms
 
 import (
+	"cmp"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"hash"
-	"io"
 	"net/url"
 	"regexp"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -48,12 +46,17 @@ type RecordAuthWithTelegramCreatedEvent struct {
 }
 
 // type OnCreateAuthRequest = func(app core.App, authRecord *core.Record) error
+var tgUsernameRegex = regexp.MustCompile(`^\w[\w.]*$`)
 
 // RecordTelegramLogin is an auth record Telegram login form.
 type RecordTelegramLogin struct {
 	app        core.App
 	collection *core.Collection
 	botToken   string
+
+	// Pre-calculated secrets
+	WebAppDataSecret []byte
+	BotTokenHash     []byte
 
 	// Optional auth record that will be used if no external
 	// auth relation is found (if it is from the same collection)
@@ -73,6 +76,9 @@ type RecordTelegramLogin struct {
 	// Additional data that will be used for creating a new auth record
 	// if an existing Telegram account doesn't exist.
 	CreateData map[string]any `form:"createData" json:"createData"`
+
+	// Cache for parsed Telegram data
+	params url.Values
 }
 
 type TelegramData struct {
@@ -106,7 +112,6 @@ func (form *RecordTelegramLogin) Validate() error {
 
 func (form *RecordTelegramLogin) checkTelegramData(value any) error {
 	data, _ := value.(string)
-
 	if result, err := form.checkTelegramAuthorization(data); !result || err != nil {
 		return validation.NewError("validation_invalid_data", "Provided data is invalid.")
 	}
@@ -114,70 +119,152 @@ func (form *RecordTelegramLogin) checkTelegramData(value any) error {
 	return nil
 }
 
+func (form *RecordTelegramLogin) getParams() (url.Values, error) {
+	if form.params != nil {
+		return form.params, nil
+	}
+
+	params, err := url.ParseQuery(form.Data)
+	if err != nil {
+		return nil, err
+	}
+
+	form.params = params
+	return params, nil
+}
+
 // checkTelegramAuthorization data param. Check https://core.telegram.org/bots/webapps#validating-data-received-via-the-web-app
+// Optimization: Using slices.SortFunc and hmac.Equal for better performance.
 func (form *RecordTelegramLogin) checkTelegramAuthorization(data string) (bool, error) {
 	// Parse string
-	params, err := url.ParseQuery(data)
+	params, err := form.getParams()
 	if err != nil {
 		return false, err
 	}
-	strs := []string{}
+
+	type kv struct{ k, v string }
+	// Optimization: Use stack-allocated buffer for params pairs to avoid heap allocation.
+	var pairsBuf [16]kv
+	pairs := pairsBuf[:0]
+	if len(params) > len(pairsBuf) {
+		pairs = make([]kv, 0, len(params))
+	}
+
 	var hashFromTelegram = ""
+	isWebApp := false
+
 	// Extract hashFromTelegram and create slice of other params
 	for k, v := range params {
+		val := v[0]
 		if k == "hash" {
-			hashFromTelegram = v[0]
+			hashFromTelegram = val
 			continue
 		}
-		strs = append(strs, k+"="+v[0])
-	}
-	// Sort extracted params
-	sort.Strings(strs)
-	// Create a string with params to validate
-	var imploded = ""
-	for _, s := range strs {
-		if imploded != "" {
-			imploded += "\n"
+		if k == "user" {
+			isWebApp = true
 		}
-		imploded += s
+		pairs = append(pairs, kv{k, val})
 	}
+
+	// Sort extracted params pairs
+	// Optimization: Using slices.SortFunc with cmp.Compare is faster than sort.Strings.
+	slices.SortFunc(pairs, func(a, b kv) int {
+		return cmp.Compare(a.k, b.k)
+	})
 
 	// Create hashFromTelegram to check is provided data valid
-	token := form.botToken
-	generatedHash := ""
-	var secretKey hash.Hash
-	if _, ok := params["user"]; ok {
+	var secret []byte
+	if isWebApp {
 		// Check is it web app data need to use HMAC_SHA256
-		secretKey = hmac.New(sha256.New, []byte("WebAppData"))
+		// Optimization: Use pre-calculated secret if provided by the plugin.
+		if form.WebAppDataSecret == nil {
+			h := hmac.New(sha256.New, []byte("WebAppData"))
+			_, _ = h.Write([]byte(form.botToken))
+			form.WebAppDataSecret = h.Sum(nil)
+		}
+		secret = form.WebAppDataSecret
 	} else {
 		// this is login button data, should use SHA256
-		secretKey = sha256.New()
+		// Optimization: Use pre-calculated secret if provided by the plugin.
+		if form.BotTokenHash == nil {
+			h := sha256.New()
+			_, _ = h.Write([]byte(form.botToken))
+			form.BotTokenHash = h.Sum(nil)
+		}
+		secret = form.BotTokenHash
 	}
-	if _, err = io.WriteString(secretKey, token); err != nil {
-		return false, err
-	}
-	resultHash := hmac.New(sha256.New, secretKey.Sum(nil))
-	if _, err = io.WriteString(resultHash, imploded); err != nil {
-		return false, err
-	}
-	generatedHash = hex.EncodeToString(resultHash.Sum(nil))
 
-	return hashFromTelegram == generatedHash, nil
+	// Optimization: Writing directly to hash avoids string allocations and copies.
+	// Using .Write([]byte(s)) instead of io.WriteString(h, s) allows the compiler
+	// to optimize away the allocation if the string is converted to []byte just for the call.
+	resultHash := hmac.New(sha256.New, secret)
+	for i, pair := range pairs {
+		if i > 0 {
+			_, _ = resultHash.Write([]byte("\n"))
+		}
+		_, _ = resultHash.Write([]byte(pair.k))
+		_, _ = resultHash.Write([]byte("="))
+		_, _ = resultHash.Write([]byte(pair.v))
+	}
+
+	var resultHashSum [sha256.Size]byte
+	generatedHash := resultHash.Sum(resultHashSum[:0])
+
+	// Optimization: Use hex.Decode with a stack-allocated buffer to avoid heap allocation.
+	// We check the length first to avoid panic if the hash is not the expected size.
+	if len(hashFromTelegram) != sha256.Size*2 {
+		return false, nil
+	}
+	var decodedHash [sha256.Size]byte
+	if _, err := hex.Decode(decodedHash[:], []byte(hashFromTelegram)); err != nil {
+		return false, err
+	}
+
+	// Optimization: hmac.Equal provides constant-time comparison.
+	return hmac.Equal(decodedHash[:], generatedHash), nil
 }
 
 // GetAuthUserFromData Parse Data url encoded values to the stuct with user data
+// Optimization: Consolidated loops and pre-allocated map capacities for better performance.
 func (form *RecordTelegramLogin) GetAuthUserFromData() (*auth.AuthUser, error) {
 	authUser := auth.AuthUser{}
 
-	params, err := url.ParseQuery(form.Data)
+	params, err := form.getParams()
 	if err != nil {
 		return &authUser, err
 	}
 
-	// Set RawUser data
-	authUser.RawUser = map[string]any{}
+	// Set RawUser data and extract user info
+	// Optimization: Pre-allocating map capacity reduces re-allocations.
+	authUser.RawUser = make(map[string]any, len(params))
+
+	var userVal string
+	firstName := ""
+	lastName := ""
+	languageCode := ""
+
 	for k, v := range params {
-		authUser.RawUser[k] = v[0]
+		val := v[0]
+		authUser.RawUser[k] = val
+		if k == "user" {
+			userVal = val
+			continue
+		}
+
+		switch k {
+		case "id":
+			authUser.Id = val
+		case "first_name":
+			firstName = val
+		case "last_name":
+			lastName = val
+		case "username":
+			authUser.Username = val
+		case "language_code":
+			languageCode = val
+		case "photo_url":
+			authUser.AvatarUrl = val
+		}
 	}
 
 	// avoid override custom data
@@ -187,17 +274,26 @@ func (form *RecordTelegramLogin) GetAuthUserFromData() (*auth.AuthUser, error) {
 	}
 
 	// If we have user param - this is data from WebApp https://core.telegram.org/bots/webapps#webappinitdata
-	if v, ok := params["user"]; ok {
+	if userVal != "" {
 		telegramData := TelegramData{}
-		if err = json.Unmarshal([]byte(v[0]), &telegramData); err != nil {
+		if err = json.Unmarshal([]byte(userVal), &telegramData); err != nil {
 			return &authUser, err
 		}
 		authUser.Id = strconv.FormatInt(telegramData.Id, 10)
 		authUser.Username = telegramData.Username
-		authUser.Name = strings.TrimSpace(telegramData.FirstName + " " + telegramData.LastName)
+		// Optimization: Avoid strings.TrimSpace and unnecessary concatenation.
+		if telegramData.FirstName != "" && telegramData.LastName != "" {
+			authUser.Name = telegramData.FirstName + " " + telegramData.LastName
+		} else {
+			authUser.Name = telegramData.FirstName + telegramData.LastName
+		}
 		authUser.AvatarUrl = telegramData.PhotoUrl
 
-		// Fill CreateData
+		// Set and fill CreateData
+		// Optimization: Reuse existing map to preserve custom user data and avoid reallocation.
+		if form.CreateData == nil {
+			form.CreateData = make(map[string]any, 6)
+		}
 		form.CreateData["name"] = authUser.Name
 		form.CreateData["first_name"] = telegramData.FirstName
 		form.CreateData["last_name"] = telegramData.LastName
@@ -209,34 +305,30 @@ func (form *RecordTelegramLogin) GetAuthUserFromData() (*auth.AuthUser, error) {
 		return &authUser, nil
 	}
 
-	// If this is data from widget - all data on to level
-	firstName := ""
-	lastName := ""
-	for k, v := range params {
-		switch k {
-		case "id":
-			authUser.Id = v[0]
-		case "first_name":
-			firstName = v[0]
-		case "last_name":
-			lastName = v[0]
-		case "username":
-			authUser.Username = v[0]
-		case "language_code":
-			form.CreateData["language_code"] = v[0]
-		case "photo_url":
-			authUser.AvatarUrl = v[0]
-			form.CreateData["photo_url"] = v[0]
-		}
+	// If this is data from widget - all data on top level
+	// Optimization: Avoid strings.TrimSpace and unnecessary concatenation.
+	if firstName != "" && lastName != "" {
+		authUser.Name = firstName + " " + lastName
+	} else {
+		authUser.Name = firstName + lastName
 	}
-	authUser.Name = strings.TrimSpace(firstName + " " + lastName)
 
-	// Fill CreateData
+	// Set and fill CreateData
+	// Optimization: Reuse existing map to preserve custom user data and avoid reallocation.
+	if form.CreateData == nil {
+		form.CreateData = make(map[string]any, 5)
+	}
 	form.CreateData["name"] = authUser.Name
 	form.CreateData["first_name"] = firstName
 	form.CreateData["last_name"] = lastName
 	form.CreateData["telegram_username"] = authUser.Username
 	form.CreateData["telegram_id"] = authUser.Id
+	if languageCode != "" {
+		form.CreateData["language_code"] = languageCode
+	}
+	if authUser.AvatarUrl != "" {
+		form.CreateData["photo_url"] = authUser.AvatarUrl
+	}
 
 	return &authUser, nil
 }
@@ -331,7 +423,7 @@ func (form *RecordTelegramLogin) submitWithAuthUser(
 			authRecord.MarkAsNew()
 			createForm := pbForms.NewRecordUpsert(txApp, authRecord)
 			createForm.GrantSuperuserAccess()
-			if authUser.Username != "" && regexp.MustCompile(`^\w[\w.]*$`).MatchString(authUser.Username) {
+			if authUser.Username != "" && tgUsernameRegex.MatchString(authUser.Username) {
 				form.CreateData["username"] = authUser.Username
 			}
 			// set random password for new auth record
