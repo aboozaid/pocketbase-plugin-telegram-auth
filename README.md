@@ -1,6 +1,10 @@
 [![Test](https://github.com/aboozaid/pocketbase-plugin-telegram-auth/actions/workflows/test.yml/badge.svg)](https://github.com/aboozaid/pocketbase-plugin-telegram-auth/actions/workflows/test.yml)
 [![codecov](https://codecov.io/github/iamelevich/pocketbase-plugin-telegram-auth/graph/badge.svg?token=X91VFOND6D)](https://codecov.io/github/iamelevich/pocketbase-plugin-telegram-auth)
 
+<!-- ALERT -->
+
+> This fork aimed to fix photo_url not included in an auth record and provided a feature to pass custom variables from your frontend and get them out of the box using OnRecordAuthWithTelegramCreated custom hook or app.OnRecordCreate("users").BindFunc
+
 <!-- TOC -->
 
 - [Overview](#overview)
